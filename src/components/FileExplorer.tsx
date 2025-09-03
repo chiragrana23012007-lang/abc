@@ -507,46 +507,45 @@ export default function FileExplorer() {
         return;
       }
 
-      // Get camera stream
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' } // Use back camera if available
-      });
-
-      // Create video element to capture frame
-      const video = document.createElement('video');
-      video.srcObject = stream;
-      video.autoplay = true;
-      video.playsInline = true;
-
-      // Wait for video to be ready
-      await new Promise((resolve) => {
-        video.onloadedmetadata = () => {
-          video.play();
-          resolve(void 0);
-        };
-      });
-
-      // Create canvas to capture frame
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
+      // Create a file input that accepts camera
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.capture = 'environment'; // Use back camera if available
       
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      
-      // Draw current frame to canvas
-      context?.drawImage(video, 0, 0);
-      
-      // Stop camera stream
-      stream.getTracks().forEach(track => track.stop());
+      // Handle file selection
+      input.onchange = async (e) => {
+        const target = e.target as HTMLInputElement;
+        const file = target.files?.[0];
+        if (!file) return;
 
-      // Convert canvas to blob
-      const blob = await new Promise<Blob>((resolve) => {
-        canvas.toBlob((blob) => {
-          resolve(blob!);
-        }, 'image/jpeg', 0.9);
+        try {
+          await processUploadedFile(file);
+        } catch (error) {
+          toast({
+            title: "Error processing photo",
+            description: "Could not process the captured photo. Please try again.",
+            variant: "destructive"
+          });
+        }
+      };
+      
+      // Trigger file picker
+      input.click();
+
+    } catch (error) {
+      console.error('Camera error:', error);
+      toast({
+        title: "Camera error",
+        description: error instanceof Error ? error.message : "Could not access camera. Please try again.",
+        variant: "destructive"
       });
+    }
+  };
 
-      const file = new globalThis.File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
+  const processUploadedFile = async (file: File) => {
+    try {
+      const fileName = file.name || `photo_${Date.now()}.jpg`;
 
       if (isAuthenticated === false) {
         // For anonymous users, store as base64 in localStorage
@@ -563,11 +562,11 @@ export default function FileExplorer() {
         reader.onload = () => {
           const newFile: File = {
             id: generateId(),
-            name: `Photo ${new Date().toLocaleDateString()}`,
+            name: fileName,
             type: 'upload',
             content: reader.result as string,
             file_path: null,
-            mime_type: 'image/jpeg',
+            mime_type: file.type,
             file_size: file.size,
             folder_id: currentFolderId || null,
             user_id: 'anonymous',
@@ -581,8 +580,8 @@ export default function FileExplorer() {
           
           loadFolderContents();
           toast({
-            title: "Photo captured",
-            description: "Photo captured and saved successfully"
+            title: "File uploaded",
+            description: `"${fileName}" uploaded successfully`
           });
         };
         reader.readAsDataURL(file);
@@ -593,9 +592,9 @@ export default function FileExplorer() {
       const user = await supabase.auth.getUser();
       const userId = user.data.user?.id || 'anonymous';
       
-      const fileExt = 'jpg';
-      const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `${userId}/${fileName}`;
+      const fileExt = file.name.split('.').pop() || 'jpg';
+      const uniqueFileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+      const filePath = `${userId}/${uniqueFileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('study-materials')
@@ -606,10 +605,10 @@ export default function FileExplorer() {
       const { error: dbError } = await supabase
         .from('files')
         .insert([{
-          name: `Photo ${new Date().toLocaleDateString()}`,
+          name: fileName,
           type: 'upload',
           file_path: filePath,
-          mime_type: 'image/jpeg',
+          mime_type: file.type,
           file_size: file.size,
           folder_id: currentFolderId,
           user_id: userId
@@ -619,17 +618,11 @@ export default function FileExplorer() {
 
       loadFolderContents();
       toast({
-        title: "Photo captured",
-        description: "Photo captured and uploaded successfully"
+        title: "File uploaded",
+        description: `"${fileName}" uploaded successfully`
       });
-
     } catch (error) {
-      console.error('Camera error:', error);
-      toast({
-        title: "Camera error",
-        description: error instanceof Error ? error.message : "Could not access camera. Please try again.",
-        variant: "destructive"
-      });
+      throw error;
     }
   };
 
