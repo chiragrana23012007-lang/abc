@@ -1,14 +1,32 @@
 import React from 'react';
-import { Menu, Mail } from 'lucide-react';
+import { Menu, Mail, LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { supabase } from '@/integrations/supabase/client';
 
 export function MobileHeader() {
   const { toggleSidebar } = useSidebar();
+  const [user, setUser] = React.useState<any>(null);
+
+  React.useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const handleContactUs = () => {
     window.location.href = 'mailto:shivarana6877@gmail.com';
+  };
+
+  const showAuthDialog = () => {
+    window.location.reload();
   };
 
   return (
@@ -23,6 +41,18 @@ export function MobileHeader() {
       </div>
       
       <div className="flex items-center gap-1">
+        {!user && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={showAuthDialog}
+            className="h-8 w-8"
+            title="Sign In"
+          >
+            <LogIn className="h-4 w-4" />
+          </Button>
+        )}
+        
         <Button
           variant="ghost"
           size="icon"

@@ -403,88 +403,94 @@ export default function FileExplorer() {
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
-    try {
-      if (isAuthenticated === false) {
-        // For anonymous users, store as base64 in localStorage (limited to small files)
-        if (file.size > 1024 * 1024) { // 1MB limit for localStorage
-          toast({
-            title: "File too large",
-            description: "Anonymous users can only upload files up to 1MB. Please sign in for larger files.",
-            variant: "destructive"
-          });
-          return;
-        }
-        
-        const reader = new FileReader();
-        reader.onload = () => {
-          const newFile: File = {
-            id: generateId(),
-            name: file.name,
-            type: 'upload',
-            content: reader.result as string,
-            file_path: null,
-            mime_type: file.type,
-            file_size: file.size,
-            folder_id: currentFolderId || null,
-            user_id: 'anonymous',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+    // Process multiple files
+    const fileArray = Array.from(files);
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const file of fileArray) {
+      try {
+        if (isAuthenticated === false) {
+          // For anonymous users, store as base64 in localStorage (limited to small files)
+          if (file.size > 1024 * 1024) { // 1MB limit for localStorage
+            errorCount++;
+            continue;
+          }
+          
+          const reader = new FileReader();
+          reader.onload = () => {
+            const newFile: File = {
+              id: generateId(),
+              name: file.name,
+              type: 'upload',
+              content: reader.result as string,
+              file_path: null,
+              mime_type: file.type,
+              file_size: file.size,
+              folder_id: currentFolderId || null,
+              user_id: 'anonymous',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            };
+            
+            const existingFiles = JSON.parse(localStorage.getItem('bookmark_files') || '[]');
+            existingFiles.push(newFile);
+            localStorage.setItem('bookmark_files', JSON.stringify(existingFiles));
+            
+            successCount++;
+            if (successCount + errorCount === fileArray.length) {
+              loadFolderContents();
+              if (successCount > 0) {
+                toast({
+                  title: "Files uploaded",
+                  description: `Successfully uploaded ${successCount} file(s)${errorCount > 0 ? `. ${errorCount} file(s) were too large.` : ''}`
+                });
+              }
+            }
           };
+          reader.readAsDataURL(file);
+        } else {
+          const user = await supabase.auth.getUser();
+          const userId = user.data.user?.id || 'anonymous';
           
-          const existingFiles = JSON.parse(localStorage.getItem('bookmark_files') || '[]');
-          existingFiles.push(newFile);
-          localStorage.setItem('bookmark_files', JSON.stringify(existingFiles));
-          
-          loadFolderContents();
-          toast({
-            title: "File uploaded",
-            description: `Uploaded "${file.name}"`
-          });
-        };
-        reader.readAsDataURL(file);
-        return;
+          const fileExt = file.name.split('.').pop();
+          const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+          const filePath = `${userId}/${fileName}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from('study-materials')
+            .upload(filePath, file);
+
+          if (uploadError) throw uploadError;
+
+          const { error: dbError } = await supabase
+            .from('files')
+            .insert([{
+              name: file.name,
+              type: 'upload',
+              file_path: filePath,
+              mime_type: file.type,
+              file_size: file.size,
+              folder_id: currentFolderId,
+              user_id: userId
+            }]);
+
+          if (dbError) throw dbError;
+          successCount++;
+        }
+      } catch (error) {
+        errorCount++;
       }
+    }
 
-      const user = await supabase.auth.getUser();
-      const userId = user.data.user?.id || 'anonymous';
-      
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
-      const filePath = `${userId}/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('study-materials')
-        .upload(filePath, file);
-
-      if (uploadError) throw uploadError;
-
-      const { error: dbError } = await supabase
-        .from('files')
-        .insert([{
-          name: file.name,
-          type: 'upload',
-          file_path: filePath,
-          mime_type: file.type,
-          file_size: file.size,
-          folder_id: currentFolderId,
-          user_id: userId
-        }]);
-
-      if (dbError) throw dbError;
-
+    if (isAuthenticated !== false) {
       loadFolderContents();
       toast({
-        title: "File uploaded",
-        description: `Uploaded "${file.name}"`
-      });
-    } catch (error) {
-      toast({
-        title: "Error uploading file",
-        description: "Could not upload file. Please try again.",
-        variant: "destructive"
+        title: "Files uploaded",
+        description: `Successfully uploaded ${successCount} file(s)${errorCount > 0 ? `. ${errorCount} file(s) failed.` : ''}`
       });
     }
   };
@@ -917,7 +923,26 @@ export default function FileExplorer() {
   return (
     <div className="w-full">
       {/* Action Buttons */}
-      <div className="flex flex-wrap gap-2 mb-4 sm:mb-6">
+      <div className="space-y-4">
+        {/* Back Button - Only show when in a folder */}
+        {currentFolderId && (
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={navigateUp}
+              className="gap-2"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </Button>
+            <div className="text-sm text-muted-foreground">
+              {currentPath.length > 0 ? `In: ${currentPath[currentPath.length - 1].name}` : 'Root'}
+            </div>
+          </div>
+        )}
+        
+        <div className="flex flex-wrap gap-2">
         <Dialog open={showNewFolder} onOpenChange={setShowNewFolder}>
           <DialogTrigger asChild>
             <Button variant="outline" size="sm" className="gap-1 sm:gap-2 flex-1 sm:flex-none">
@@ -1001,6 +1026,7 @@ export default function FileExplorer() {
           <CameraIcon className="h-4 w-4" />
           <span className="text-xs sm:text-sm">Camera</span>
         </Button>
+        </div>
       </div>
 
       {/* Breadcrumb Navigation */}
@@ -1026,23 +1052,6 @@ export default function FileExplorer() {
 
       {/* Content Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-4">
-        {/* Navigate Up Button */}
-        {currentFolderId && (
-          <Card 
-            className="cursor-pointer hover:shadow-md transition-shadow active:scale-95"
-            onClick={navigateUp}
-          >
-            <CardHeader className="pb-1 p-3 sm:p-6 sm:pb-2">
-              <div className="flex items-center justify-center">
-                <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-3 sm:p-6 pt-0">
-              <p className="text-xs sm:text-sm font-medium text-center">Go Back</p>
-            </CardContent>
-          </Card>
-        )}
-
         {/* Folders */}
         {folders.map((folder) => (
           <Card 
@@ -1239,6 +1248,14 @@ export default function FileExplorer() {
                     src={viewingFile.content || ''} 
                     alt={viewingFile.name}
                     className="max-w-full h-auto rounded-md"
+                  />
+                </div>
+              ) : viewingFile.mime_type === 'application/pdf' ? (
+                <div className="w-full h-[70vh]">
+                  <iframe
+                    src={viewingFile.content || ''}
+                    className="w-full h-full border rounded-md"
+                    title={viewingFile.name}
                   />
                 </div>
               ) : (

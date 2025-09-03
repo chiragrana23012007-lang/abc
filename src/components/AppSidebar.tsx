@@ -137,10 +137,6 @@ export function AppSidebar() {
 
       <SidebarFooter className="border-t border-sidebar-border p-4">
         <div className="space-y-2">
-          <div className="hidden md:flex items-center justify-center">
-            <ThemeToggle />
-          </div>
-          
           {!collapsed && (
             <>
               <Button

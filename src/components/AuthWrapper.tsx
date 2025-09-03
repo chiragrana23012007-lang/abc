@@ -18,7 +18,7 @@ export default function AuthWrapper({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
-  const [skipAuth, setSkipAuth] = useState(false);
+  const [skipAuth, setSkipAuth] = useState(true); // Default to anonymous access
   const { toast } = useToast();
   useEffect(() => {
     // Get initial user
@@ -164,11 +164,6 @@ export default function AuthWrapper({
               <div className="text-center">
                 <Button variant="link" onClick={() => setIsSignUp(!isSignUp)} className="text-sm">
                   {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
-                </Button>
-              </div>
-              <div className="text-center">
-                <Button variant="outline" onClick={() => setSkipAuth(true)} className="text-sm w-full">
-                  Continue without signing in
                 </Button>
               </div>
             </div>
